@@ -1,9 +1,9 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
-# تفعيل CORS لضمان وصول تطبيق Stremio للمانفيست
+# إعداد CORS الكامل المطلوبة لـ Stremio
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -22,6 +22,18 @@ MANIFEST = {
     "idPrefixes": ["tt"],
     "catalogs": []
 }
+
+# معالجة طلبات OPTIONS لجميع المسارات (ضروري جداً لبرنامج Stremio Desktop)
+@app.options("/{full_path:path}")
+async def options_handler(full_path: str):
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+        },
+    )
 
 @app.get("/")
 def root():
