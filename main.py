@@ -1,12 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from mangum import Mangum
-import requests
-from bs4 import BeautifulSoup
 
 app = FastAPI()
 
-# السماح لـ Stremio بالوصول للإضافة بدون حجب (CORS)
+# تفعيل CORS لضمان وصول تطبيق Stremio للمانفيست
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -36,9 +33,4 @@ def get_manifest():
 
 @app.get("/stream/{type}/{id}.json")
 def get_streams(type: str, id: str):
-    # هنا يتم وضع منطق الجلب من موقع قصة
-    streams = []
-    return {"streams": streams}
-
-# Handler الخاص بـ Vercel Serverless
-handler = Mangum(app)
+    return {"streams": []}
