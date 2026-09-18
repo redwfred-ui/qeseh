@@ -6,12 +6,10 @@ from bs4 import BeautifulSoup
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-# تعطيل تحذيرات SSL
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 app = FastAPI()
 
-# إعدادات CORS الشاملة المقبولة لدى Stremio
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -22,10 +20,10 @@ app.add_middleware(
 
 MANIFEST = {
     "id": "org.qeseh.stremio.arabic",
-    "version": "1.3.0",
+    "version": "1.4.0",
     "name": "Qeseh Arabic - قصة عشق",
     "description": "مشاهدة المسلسلات والأفلام التركية المترجمة والمدبلجة من موقع قصة",
-    "resources": ["catalog", "stream"],
+    "resources": ["catalog", "meta", "stream"],
     "types": ["series", "movie"],
     "idPrefixes": ["tt"],
     "catalogs": [
@@ -108,7 +106,6 @@ TURKISH_MOVIES_CATALOG = [
 ]
 
 def build_catalog_items(catalog_list, item_type):
-    """جلب بوسترات Stremio الرسمية السريعة"""
     metas = []
     for item in catalog_list:
         metas.append({
@@ -138,7 +135,7 @@ def get_title(imdb_id: str, item_type: str):
 def scrape_qeseh_streams(title: str, episode: str = None):
     streams = []
     search_query = title
-    if episode:
+    if episode and episode != "0":
         search_query = f"{title} الحلقة {episode}"
 
     try:
@@ -148,7 +145,6 @@ def scrape_qeseh_streams(title: str, episode: str = None):
         res = requests.get(search_url, headers=HEADERS, timeout=6, verify=False)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, "html.parser")
-            
             links = soup.select("article a, .post-title a, .entry-title a, h2 a, .box a, .item a")
             target_url = None
             for link in links:
@@ -173,25 +169,24 @@ def scrape_qeseh_streams(title: str, episode: str = None):
                             if src.startswith("//"):
                                 src = "https:" + src
                             
-                            # إضافة المشغل بجميع الصيغ التي يقبلها Stremio Desktop
                             streams.append({
                                 "name": "Qeseh Web",
-                                "title": f"سيرفر قصة #{server_idx} (مشغل الويب)",
-                                "embedUrl": src
+                                "title": f"سيرفر قصة #{server_idx} (فتح المشغل الخارجية)",
+                                "externalUrl": src
                             })
                             streams.append({
-                                "name": "Qeseh Browser",
-                                "title": f"سيرفر قصة #{server_idx} (فتح في المتصفح)",
-                                "externalUrl": src
+                                "name": "Qeseh Embed",
+                                "title": f"سيرفر قصة #{server_idx} (دمج داخل التطبيق)",
+                                "embedUrl": src
                             })
                             server_idx += 1
     except Exception as e:
         print(f"Scraper Error: {e}")
 
-    # سيرفر مباشر يضمن ظهور خيار التشغيل دائماً داخل التطبيق
+    # سيرفر فيديو مباشر يضمن إتاحة خيار تشغيل بأي حال من الأحوال
     streams.append({
         "name": "Qeseh Direct",
-        "title": f"سيرفر قصة المباشر - {title}" + (f" (حلقة {episode})" if episode else ""),
+        "title": f"سيرفر قصة المباشر - {title}" + (f" (حلقة {episode})" if episode and episode != "0" else ""),
         "url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
     })
 
@@ -221,6 +216,20 @@ def get_catalog(type: str, id: str, extra: str = None):
         metas = build_catalog_items(TURKISH_MOVIES_CATALOG, "movie")
 
     return Response(content=json.dumps({"metas": metas}, ensure_ascii=False), headers=CORS_HEADERS)
+
+@app.get("/meta/{type}/{id}.json")
+def get_meta(type: str, id: str):
+    """ربط الحلقات والمواسم مباشرة مع Cinemeta لتجنب No metadata found"""
+    clean_id = id.replace(".json", "")
+    try:
+        url = f"https://v3-cinemeta.stremio.com/meta/{type}/{clean_id}.json"
+        res = requests.get(url, headers=HEADERS, timeout=5)
+        if res.status_code == 200:
+            return Response(content=res.text, headers=CORS_HEADERS)
+    except Exception as e:
+        print(f"Meta Error: {e}")
+    
+    return Response(content=json.dumps({"meta": {}}), headers=CORS_HEADERS)
 
 @app.get("/stream/{type}/{id}.json")
 def get_streams(type: str, id: str):
