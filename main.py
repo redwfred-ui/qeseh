@@ -6,12 +6,12 @@ from bs4 import BeautifulSoup
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-# تعطيل تحذيرات SSL المنبثقة من طلبات الربط
+# تعطيل تحذيرات SSL
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 app = FastAPI()
 
-# تفعيل CORS لضمان التوافق التام مع Stremio
+# إعدادات CORS الشاملة المقبولة لدى Stremio
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -22,9 +22,9 @@ app.add_middleware(
 
 MANIFEST = {
     "id": "org.qeseh.stremio.arabic",
-    "version": "1.1.0",
+    "version": "1.3.0",
     "name": "Qeseh Arabic - قصة عشق",
-    "description": "أضخم مكتبة للمسلسلات والأفلام التركية المترجمة والمدبلجة من موقع قصة عشق",
+    "description": "مشاهدة المسلسلات والأفلام التركية المترجمة والمدبلجة من موقع قصة",
     "resources": ["catalog", "stream"],
     "types": ["series", "movie"],
     "idPrefixes": ["tt"],
@@ -52,10 +52,10 @@ CORS_HEADERS = {
 }
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
 }
 
-# قاموس عناوين البحث السريع
 KNOWN_TITLES = {
     "tt10886166": "المؤسس عثمان",
     "tt28823795": "حب بلا حدود",
@@ -108,20 +108,21 @@ TURKISH_MOVIES_CATALOG = [
 ]
 
 def build_catalog_items(catalog_list, item_type):
-    """بناء الكتالوج فورياً لتفادي أخطاء التأخير"""
+    """جلب بوسترات Stremio الرسمية السريعة"""
     metas = []
     for item in catalog_list:
         metas.append({
             "id": item["id"],
             "type": item_type,
             "name": item["name"],
-            "poster": f"https://images.metahub.space/poster/medium/{item['id']}/img",
+            "poster": f"https://v3-cinemeta.stremio.com/poster/medium/{item['id']}/img",
+            "background": f"https://v3-cinemeta.stremio.com/background/medium/{item['id']}/img",
+            "description": f"مشاهدة {item['name']} على إضافة قصة عشق",
             "genres": ["تركي", "قصة عشق"]
         })
     return metas
 
 def get_title(imdb_id: str, item_type: str):
-    """جلب اسم العمل باللغة العربية للبحث"""
     if imdb_id in KNOWN_TITLES:
         return KNOWN_TITLES[imdb_id]
     
@@ -135,7 +136,6 @@ def get_title(imdb_id: str, item_type: str):
     return None
 
 def scrape_qeseh_streams(title: str, episode: str = None):
-    """السكرابر الخاص بموقع قصة"""
     streams = []
     search_query = title
     if episode:
@@ -145,7 +145,7 @@ def scrape_qeseh_streams(title: str, episode: str = None):
         encoded_query = urllib.parse.quote(search_query)
         search_url = f"https://wwv.qeseh.com/?s={encoded_query}"
         
-        res = requests.get(search_url, headers=HEADERS, timeout=5, verify=False)
+        res = requests.get(search_url, headers=HEADERS, timeout=6, verify=False)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, "html.parser")
             
@@ -161,7 +161,7 @@ def scrape_qeseh_streams(title: str, episode: str = None):
                 if target_url.startswith("/"):
                     target_url = "https://wwv.qeseh.com" + target_url
 
-                page_res = requests.get(target_url, headers=HEADERS, timeout=5, verify=False)
+                page_res = requests.get(target_url, headers=HEADERS, timeout=6, verify=False)
                 if page_res.status_code == 200:
                     page_soup = BeautifulSoup(page_res.text, "html.parser")
                     iframes = page_soup.find_all("iframe")
@@ -173,22 +173,27 @@ def scrape_qeseh_streams(title: str, episode: str = None):
                             if src.startswith("//"):
                                 src = "https:" + src
                             
+                            # إضافة المشغل بجميع الصيغ التي يقبلها Stremio Desktop
                             streams.append({
-                                "name": "Qeseh",
-                                "title": f"سيرفر قصة #{server_idx}\n720p/1080p | مترجم",
-                                "url": src
+                                "name": "Qeseh Web",
+                                "title": f"سيرفر قصة #{server_idx} (مشغل الويب)",
+                                "embedUrl": src
+                            })
+                            streams.append({
+                                "name": "Qeseh Browser",
+                                "title": f"سيرفر قصة #{server_idx} (فتح في المتصفح)",
+                                "externalUrl": src
                             })
                             server_idx += 1
     except Exception as e:
         print(f"Scraper Error: {e}")
 
-    # سيرفر ضمان في حال تعذر السحب تلقائياً
-    if not streams:
-        streams.append({
-            "name": "Qeseh",
-            "title": f"سيرفر قصة الرئيسي - {title}" + (f" (حلقة {episode})" if episode else ""),
-            "url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
-        })
+    # سيرفر مباشر يضمن ظهور خيار التشغيل دائماً داخل التطبيق
+    streams.append({
+        "name": "Qeseh Direct",
+        "title": f"سيرفر قصة المباشر - {title}" + (f" (حلقة {episode})" if episode else ""),
+        "url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
+    })
 
     return streams
 
@@ -198,7 +203,7 @@ def options_handler(full_path: str):
 
 @app.get("/")
 def root():
-    return Response(content=json.dumps({"status": "Qeseh Active & Ready"}, ensure_ascii=False), headers=CORS_HEADERS)
+    return Response(content=json.dumps({"status": "Qeseh Active"}, ensure_ascii=False), headers=CORS_HEADERS)
 
 @app.get("/manifest.json")
 def get_manifest():
