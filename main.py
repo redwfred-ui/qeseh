@@ -1,4 +1,5 @@
 import json
+import requests
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -14,7 +15,7 @@ app.add_middleware(
 
 MANIFEST = {
     "id": "org.tomandjerry.classic.complete",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "name": "Tom & Jerry Classic Complete",
     "description": "جميع حلقات توم وجيري الكلاسيكية الـ 161 كاملة بدون تقطيع",
     "resources": ["catalog", "meta", "stream"],
@@ -38,6 +39,20 @@ CORS_HEADERS = {
 
 ARCHIVE_BASE_URL = "https://archive.org/download/tom_and_jerry_1940_1958/Tom_and_Jerry_"
 TOTAL_EPISODES = 161
+URL_CACHE = {}
+
+def get_direct_stream_url(initial_url: str) -> str:
+    """تتبع إعادة التوجيه لـ Archive.org للحصول على رابط السيرفر المباشر لتفادي التعليق في Stremio"""
+    if initial_url in URL_CACHE:
+        return URL_CACHE[initial_url]
+    try:
+        res = requests.head(initial_url, allow_redirects=True, timeout=4)
+        if res.status_code == 200:
+            URL_CACHE[initial_url] = res.url
+            return res.url
+    except Exception as e:
+        print(f"Redirect resolution error: {e}")
+    return initial_url
 
 @app.options("/{full_path:path}")
 def options_handler(full_path: str):
@@ -93,11 +108,23 @@ def get_streams(id: str):
             ep_num = int(parts[2])
             if 1 <= ep_num <= TOTAL_EPISODES:
                 formatted_num = f"{ep_num:03d}"
-                video_url = f"{ARCHIVE_BASE_URL}{formatted_num}.mp4"
+                raw_url = f"{ARCHIVE_BASE_URL}{formatted_num}.mp4"
+                
+                # جلب الرابط المباشر النهائي بدون Redirect
+                direct_url = get_direct_stream_url(raw_url)
+                
+                # سيرفر التشغيل المباشر
                 streams.append({
                     "name": "Archive Direct HD",
                     "title": f"تشغيل مباشر - الحلقة {ep_num}",
-                    "url": video_url
+                    "url": direct_url
+                })
+                
+                # سيرفر الفتح بمشغل خارجي (VLC)
+                streams.append({
+                    "name": "External Player (VLC)",
+                    "title": f"فتح بواسطة مشغل خارجي - الحلقة {ep_num}",
+                    "externalUrl": direct_url
                 })
         except Exception as e:
             print(f"Stream error: {e}")
