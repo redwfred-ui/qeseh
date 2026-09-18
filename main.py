@@ -19,25 +19,24 @@ app.add_middleware(
 )
 
 MANIFEST = {
-    "id": "org.qeseh.stremio.arabic",
-    "version": "1.4.0",
-    "name": "Qeseh Arabic - قصة عشق",
-    "description": "مشاهدة المسلسلات والأفلام التركية المترجمة والمدبلجة من موقع قصة",
+    "id": "org.qeseh.stremio.dynamic",
+    "version": "2.0.0",
+    "name": "Qeseh Eshq - قصة عشق الشامل",
+    "description": "تصفح وبحث في كامل مكتبة مسلسلات وأفلام قصة عشق مباشرة",
     "resources": ["catalog", "meta", "stream"],
     "types": ["series", "movie"],
-    "idPrefixes": ["tt"],
     "catalogs": [
         {
             "type": "series",
-            "id": "qeseh_series",
-            "name": "مسلسلات قصة عشق",
-            "extra": [{"name": "search", "isRequired": False}]
+            "id": "qeseh_all_series",
+            "name": "جميع مسلسلات قصة عشق",
+            "extra": [{"name": "search", "isRequired": False}, {"name": "skip", "isRequired": False}]
         },
         {
             "type": "movie",
-            "id": "qeseh_movies",
-            "name": "أفلام قصة عشق",
-            "extra": [{"name": "search", "isRequired": False}]
+            "id": "qeseh_all_movies",
+            "name": "جميع أفلام قصة عشق",
+            "extra": [{"name": "search", "isRequired": False}, {"name": "skip", "isRequired": False}]
         }
     ]
 }
@@ -50,147 +49,46 @@ CORS_HEADERS = {
 }
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 }
 
-KNOWN_TITLES = {
-    "tt10886166": "المؤسس عثمان",
-    "tt28823795": "حب بلا حدود",
-    "tt28817684": "المتوحش",
-    "tt22818508": "شراب التوت",
-    "tt22080094": "طائر الرفراف",
-    "tt15097870": "القضاء",
-    "tt29584481": "براعم حمراء",
-    "tt31006497": "بهار",
-    "tt31006096": "حبات اللؤلؤ",
-    "tt7442124": "الحفرة",
-    "tt4386808": "قيامة أرطغرل",
-    "tt12330196": "أنت اطرق بابي",
-    "tt6144884": "في الداخل",
-    "tt14050226": "المنظمة",
-    "tt7458110": "حب أبيض أسود",
-    "tt10439732": "معجزة في الزنزانة رقم 7",
-    "tt13083098": "حياة من ورق",
-    "tt23824854": "النداء الأخير إلى إسطنبول",
-    "tt31102572": "فن الحب",
-    "tt27981503": "دعني أؤمن بك",
-    "tt13670992": "هل رأيت اليراعات من قبل"
-}
-
-TURKISH_SERIES_CATALOG = [
-    {"id": "tt10886166", "name": "المؤسس عثمان (Kuruluş Osman)"},
-    {"id": "tt28823795", "name": "حب بلا حدود (Hudutsuz Sevda)"},
-    {"id": "tt28817684", "name": "المتوحش (Yabani)"},
-    {"id": "tt22818508", "name": "شراب التوت (Kızılcık Şerbeti)"},
-    {"id": "tt22080094", "name": "طائر الرفراف (Yalı Çapkını)"},
-    {"id": "tt15097870", "name": "القضاء (Yargı)"},
-    {"id": "tt29584481", "name": "براعم حمراء (Kızıl Goncalar)"},
-    {"id": "tt31006497", "name": "بهار (Bahar)"},
-    {"id": "tt31006096", "name": "حبات اللؤلؤ (İnci Taneleri)"},
-    {"id": "tt7442124", "name": "الحفرة (Çukur)"},
-    {"id": "tt4386808", "name": "قيامة أرطغرل (Diriliş Ertuğrul)"},
-    {"id": "tt12330196", "name": "أنت اطرق بابي (Sen Çal Kapımı)"},
-    {"id": "tt6144884", "name": "في الداخل (İçerde)"},
-    {"id": "tt14050226", "name": "المنظمة (Teşkilat)"},
-    {"id": "tt7458110", "name": "حب أبيض أسود (Siyah Beyaz Aşk)"}
-]
-
-TURKISH_MOVIES_CATALOG = [
-    {"id": "tt10439732", "name": "معجزة في الزنزانة رقم 7 (Miracle in Cell No. 7)"},
-    {"id": "tt13083098", "name": "حياة من ورق (Paper Lives)"},
-    {"id": "tt23824854", "name": "النداء الأخير إلى إسطنبول (Last Call for Istanbul)"},
-    {"id": "tt31102572", "name": "فن الحب (Art of Love)"},
-    {"id": "tt27981503", "name": "دعني أؤمن بك (Make Me Believe)"},
-    {"id": "tt13670992", "name": "هل رأيت اليراعات من قبل؟"}
-]
-
-def build_catalog_items(catalog_list, item_type):
+def scrape_qeseh_catalog(search_query=None, page=1, is_movie=False):
     metas = []
-    for item in catalog_list:
-        metas.append({
-            "id": item["id"],
-            "type": item_type,
-            "name": item["name"],
-            "poster": f"https://v3-cinemeta.stremio.com/poster/medium/{item['id']}/img",
-            "background": f"https://v3-cinemeta.stremio.com/background/medium/{item['id']}/img",
-            "description": f"مشاهدة {item['name']} على إضافة قصة عشق",
-            "genres": ["تركي", "قصة عشق"]
-        })
-    return metas
-
-def get_title(imdb_id: str, item_type: str):
-    if imdb_id in KNOWN_TITLES:
-        return KNOWN_TITLES[imdb_id]
-    
-    try:
-        url = f"https://v3-cinemeta.stremio.com/meta/{item_type}/{imdb_id}.json"
-        res = requests.get(url, headers=HEADERS, timeout=4)
-        if res.status_code == 200:
-            return res.json().get("meta", {}).get("name")
-    except Exception as e:
-        print(f"Cinemeta Error: {e}")
-    return None
-
-def scrape_qeseh_streams(title: str, episode: str = None):
-    streams = []
-    search_query = title
-    if episode and episode != "0":
-        search_query = f"{title} الحلقة {episode}"
+    if search_query:
+        url = f"https://wwv.qeseh.com/?s={urllib.parse.quote(search_query)}"
+    else:
+        cat = "افلام-تركية" if is_movie else "مسلسلات-تركية"
+        url = f"https://wwv.qeseh.com/category/{cat}/page/{page}/" if page > 1 else f"https://wwv.qeseh.com/category/{cat}/"
 
     try:
-        encoded_query = urllib.parse.quote(search_query)
-        search_url = f"https://wwv.qeseh.com/?s={encoded_query}"
-        
-        res = requests.get(search_url, headers=HEADERS, timeout=6, verify=False)
+        res = requests.get(url, headers=HEADERS, timeout=6, verify=False)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, "html.parser")
-            links = soup.select("article a, .post-title a, .entry-title a, h2 a, .box a, .item a")
-            target_url = None
-            for link in links:
-                href = link.get("href")
-                if href and ("qeseh.com" in href or href.startswith("/")):
-                    target_url = href
-                    break
+            articles = soup.select("article, .post-item, .box, .item")
+            for art in articles:
+                a_tag = art.find("a")
+                img_tag = art.find("img")
+                title_tag = art.find(["h2", "h3", "span"]) or a_tag
 
-            if target_url:
-                if target_url.startswith("/"):
-                    target_url = "https://wwv.qeseh.com" + target_url
-
-                page_res = requests.get(target_url, headers=HEADERS, timeout=6, verify=False)
-                if page_res.status_code == 200:
-                    page_soup = BeautifulSoup(page_res.text, "html.parser")
-                    iframes = page_soup.find_all("iframe")
+                if a_tag and a_tag.get("href"):
+                    title = title_tag.get_text(strip=True) if title_tag else "عرض تركي"
+                    link = a_tag["href"]
+                    img_url = img_tag.get("src") or img_tag.get("data-src") if img_tag else ""
                     
-                    server_idx = 1
-                    for iframe in iframes:
-                        src = iframe.get("src") or iframe.get("data-src") or iframe.get("data-lazy-src")
-                        if src:
-                            if src.startswith("//"):
-                                src = "https:" + src
-                            
-                            streams.append({
-                                "name": "Qeseh Web",
-                                "title": f"سيرفر قصة #{server_idx} (فتح المشغل الخارجية)",
-                                "externalUrl": src
-                            })
-                            streams.append({
-                                "name": "Qeseh Embed",
-                                "title": f"سيرفر قصة #{server_idx} (دمج داخل التطبيق)",
-                                "embedUrl": src
-                            })
-                            server_idx += 1
+                    # تشفير رابط الصفحة ليكون ID خاص بـ Stremio
+                    item_id = "qeseh_" + urllib.parse.quote_plus(link)
+                    
+                    metas.append({
+                        "id": item_id,
+                        "type": "movie" if is_movie else "series",
+                        "name": title,
+                        "poster": img_url,
+                        "description": f"شاهد {title} على قصة عشق"
+                    })
     except Exception as e:
-        print(f"Scraper Error: {e}")
+        print(f"Catalog Error: {e}")
 
-    # سيرفر فيديو مباشر يضمن إتاحة خيار تشغيل بأي حال من الأحوال
-    streams.append({
-        "name": "Qeseh Direct",
-        "title": f"سيرفر قصة المباشر - {title}" + (f" (حلقة {episode})" if episode and episode != "0" else ""),
-        "url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
-    })
-
-    return streams
+    return metas
 
 @app.options("/{full_path:path}")
 def options_handler(full_path: str):
@@ -198,7 +96,7 @@ def options_handler(full_path: str):
 
 @app.get("/")
 def root():
-    return Response(content=json.dumps({"status": "Qeseh Active"}, ensure_ascii=False), headers=CORS_HEADERS)
+    return Response(content=json.dumps({"status": "Qeseh Dynamic Active"}, ensure_ascii=False), headers=CORS_HEADERS)
 
 @app.get("/manifest.json")
 def get_manifest():
@@ -207,42 +105,63 @@ def get_manifest():
 @app.get("/catalog/{type}/{id}.json")
 @app.get("/catalog/{type}/{id}/{extra}.json")
 def get_catalog(type: str, id: str, extra: str = None):
-    clean_id = id.replace(".json", "")
-    metas = []
+    search_q = None
+    skip = 0
     
-    if type == "series" and "qeseh_series" in clean_id:
-        metas = build_catalog_items(TURKISH_SERIES_CATALOG, "series")
-    elif type == "movie" and "qeseh_movies" in clean_id:
-        metas = build_catalog_items(TURKISH_MOVIES_CATALOG, "movie")
+    if extra:
+        for param in extra.split("&"):
+            if param.startswith("search="):
+                search_q = urllib.parse.unquote(param.split("=")[1])
+            elif param.startswith("skip="):
+                try:
+                    skip = int(param.split("=")[1])
+                except:
+                    skip = 0
 
+    page = (skip // 20) + 1
+    is_movie = (type == "movie")
+    
+    metas = scrape_qeseh_catalog(search_query=search_q, page=page, is_movie=is_movie)
     return Response(content=json.dumps({"metas": metas}, ensure_ascii=False), headers=CORS_HEADERS)
 
 @app.get("/meta/{type}/{id}.json")
 def get_meta(type: str, id: str):
-    """ربط الحلقات والمواسم مباشرة مع Cinemeta لتجنب No metadata found"""
     clean_id = id.replace(".json", "")
-    try:
-        url = f"https://v3-cinemeta.stremio.com/meta/{type}/{clean_id}.json"
-        res = requests.get(url, headers=HEADERS, timeout=5)
-        if res.status_code == 200:
-            return Response(content=res.text, headers=CORS_HEADERS)
-    except Exception as e:
-        print(f"Meta Error: {e}")
-    
-    return Response(content=json.dumps({"meta": {}}), headers=CORS_HEADERS)
+    return Response(content=json.dumps({
+        "meta": {
+            "id": clean_id,
+            "type": type,
+            "name": "مشاهدة عبر قصة عشق",
+            "poster": "",
+            "description": "انقر لعرض السيرفرات المتاحة"
+        }
+    }, ensure_ascii=False), headers=CORS_HEADERS)
 
 @app.get("/stream/{type}/{id}.json")
 def get_streams(type: str, id: str):
     clean_id = id.replace(".json", "")
-    parts = clean_id.split(":")
-    imdb_id = parts[0]
-    season = parts[1] if len(parts) > 1 else None
-    episode = parts[2] if len(parts) > 2 else None
-
-    title = get_title(imdb_id, type)
     streams = []
-
-    if title:
-        streams = scrape_qeseh_streams(title, episode)
+    
+    if clean_id.startswith("qeseh_"):
+        target_url = urllib.parse.unquote_plus(clean_id.replace("qeseh_", ""))
+        try:
+            page_res = requests.get(target_url, headers=HEADERS, timeout=6, verify=False)
+            if page_res.status_code == 200:
+                page_soup = BeautifulSoup(page_res.text, "html.parser")
+                iframes = page_soup.find_all("iframe")
+                
+                idx = 1
+                for iframe in iframes:
+                    src = iframe.get("src") or iframe.get("data-src")
+                    if src:
+                        if src.startswith("//"): src = "https:" + src
+                        streams.append({
+                            "name": "Qeseh Web",
+                            "title": f"سيرفر قصة #{idx} (فتح خارجي)",
+                            "externalUrl": src
+                        })
+                        idx += 1
+        except Exception as e:
+            print(f"Stream error: {e}")
 
     return Response(content=json.dumps({"streams": streams}, ensure_ascii=False), headers=CORS_HEADERS)
