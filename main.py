@@ -1,9 +1,10 @@
+import json
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
-# إعداد CORS الكامل المطلوبة لـ Stremio
+# إعداد CORS لضمان قبول Stremio للطلبات
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -13,36 +14,32 @@ app.add_middleware(
 )
 
 MANIFEST = {
-    "id": "com.qeseh.stremio.addon",
+    "id": "org.qeseh.stremio.arabic",
     "version": "1.0.0",
     "name": "Qeseh Arabic",
-    "description": "Stream Arabic content from Qeseh on Stremio",
+    "description": "مشاهدة المسلسلات والأفلام التركية المترجمة من موقع قصة",
     "resources": ["stream"],
     "types": ["movie", "series"],
     "idPrefixes": ["tt"],
     "catalogs": []
 }
 
-# معالجة طلبات OPTIONS لجميع المسارات (ضروري جداً لبرنامج Stremio Desktop)
-@app.options("/{full_path:path}")
-async def options_handler(full_path: str):
-    return Response(
-        status_code=200,
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-            "Access-Control-Allow-Headers": "*",
-        },
-    )
+# ترويسات الاستجابة المباشرة لبرنامج Stremio
+CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "*",
+    "Content-Type": "application/json"
+}
 
 @app.get("/")
-def root():
-    return {"status": "Qeseh Addon is Running!"}
+async def root():
+    return Response(content=json.dumps({"status": "Qeseh Addon Active"}), headers=CORS_HEADERS)
 
 @app.get("/manifest.json")
-def get_manifest():
-    return MANIFEST
+async def get_manifest():
+    return Response(content=json.dumps(MANIFEST), headers=CORS_HEADERS)
 
 @app.get("/stream/{type}/{id}.json")
-def get_streams(type: str, id: str):
-    return {"streams": []}
+async def get_streams(type: str, id: str):
+    return Response(content=json.dumps({"streams": []}), headers=CORS_HEADERS)
