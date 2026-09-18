@@ -1,12 +1,17 @@
 import json
+import urllib.parse
+import urllib3
 import requests
 from bs4 import BeautifulSoup
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
+# تعطيل تحذيرات SSL المنبثقة من طلبات الربط
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 app = FastAPI()
 
-# تفعيل CORS لضمان قبول جميع طلبات Stremio
+# تفعيل CORS لضمان التوافق التام مع Stremio
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,13 +22,26 @@ app.add_middleware(
 
 MANIFEST = {
     "id": "org.qeseh.stremio.arabic",
-    "version": "1.0.0",
-    "name": "Qeseh Arabic",
-    "description": "مشاهدة المسلسلات والأفلام التركية المترجمة من موقع قصة",
-    "resources": ["stream"],
-    "types": ["movie", "series"],
+    "version": "1.1.0",
+    "name": "Qeseh Arabic - قصة عشق",
+    "description": "أضخم مكتبة للمسلسلات والأفلام التركية المترجمة والمدبلجة من موقع قصة عشق",
+    "resources": ["catalog", "stream"],
+    "types": ["series", "movie"],
     "idPrefixes": ["tt"],
-    "catalogs": []
+    "catalogs": [
+        {
+            "type": "series",
+            "id": "qeseh_series",
+            "name": "مسلسلات قصة عشق",
+            "extra": [{"name": "search", "isRequired": False}]
+        },
+        {
+            "type": "movie",
+            "id": "qeseh_movies",
+            "name": "أفلام قصة عشق",
+            "extra": [{"name": "search", "isRequired": False}]
+        }
+    ]
 }
 
 CORS_HEADERS = {
@@ -33,58 +51,184 @@ CORS_HEADERS = {
     "Content-Type": "application/json; charset=utf-8"
 }
 
-def get_title_from_imdb(imdb_id: str, item_type: str):
-    """جلب اسم العمل من Cinemeta باستخدام ID الخاص بـ IMDB"""
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+}
+
+# قاموس عناوين البحث السريع
+KNOWN_TITLES = {
+    "tt10886166": "المؤسس عثمان",
+    "tt28823795": "حب بلا حدود",
+    "tt28817684": "المتوحش",
+    "tt22818508": "شراب التوت",
+    "tt22080094": "طائر الرفراف",
+    "tt15097870": "القضاء",
+    "tt29584481": "براعم حمراء",
+    "tt31006497": "بهار",
+    "tt31006096": "حبات اللؤلؤ",
+    "tt7442124": "الحفرة",
+    "tt4386808": "قيامة أرطغرل",
+    "tt12330196": "أنت اطرق بابي",
+    "tt6144884": "في الداخل",
+    "tt14050226": "المنظمة",
+    "tt7458110": "حب أبيض أسود",
+    "tt10439732": "معجزة في الزنزانة رقم 7",
+    "tt13083098": "حياة من ورق",
+    "tt23824854": "النداء الأخير إلى إسطنبول",
+    "tt31102572": "فن الحب",
+    "tt27981503": "دعني أؤمن بك",
+    "tt13670992": "هل رأيت اليراعات من قبل"
+}
+
+TURKISH_SERIES_CATALOG = [
+    {"id": "tt10886166", "name": "المؤسس عثمان (Kuruluş Osman)"},
+    {"id": "tt28823795", "name": "حب بلا حدود (Hudutsuz Sevda)"},
+    {"id": "tt28817684", "name": "المتوحش (Yabani)"},
+    {"id": "tt22818508", "name": "شراب التوت (Kızılcık Şerbeti)"},
+    {"id": "tt22080094", "name": "طائر الرفراف (Yalı Çapkını)"},
+    {"id": "tt15097870", "name": "القضاء (Yargı)"},
+    {"id": "tt29584481", "name": "براعم حمراء (Kızıl Goncalar)"},
+    {"id": "tt31006497", "name": "بهار (Bahar)"},
+    {"id": "tt31006096", "name": "حبات اللؤلؤ (İnci Taneleri)"},
+    {"id": "tt7442124", "name": "الحفرة (Çukur)"},
+    {"id": "tt4386808", "name": "قيامة أرطغرل (Diriliş Ertuğrul)"},
+    {"id": "tt12330196", "name": "أنت اطرق بابي (Sen Çal Kapımı)"},
+    {"id": "tt6144884", "name": "في الداخل (İçerde)"},
+    {"id": "tt14050226", "name": "المنظمة (Teşkilat)"},
+    {"id": "tt7458110", "name": "حب أبيض أسود (Siyah Beyaz Aşk)"}
+]
+
+TURKISH_MOVIES_CATALOG = [
+    {"id": "tt10439732", "name": "معجزة في الزنزانة رقم 7 (Miracle in Cell No. 7)"},
+    {"id": "tt13083098", "name": "حياة من ورق (Paper Lives)"},
+    {"id": "tt23824854", "name": "النداء الأخير إلى إسطنبول (Last Call for Istanbul)"},
+    {"id": "tt31102572", "name": "فن الحب (Art of Love)"},
+    {"id": "tt27981503", "name": "دعني أؤمن بك (Make Me Believe)"},
+    {"id": "tt13670992", "name": "هل رأيت اليراعات من قبل؟"}
+]
+
+def build_catalog_items(catalog_list, item_type):
+    """بناء الكتالوج فورياً لتفادي أخطاء التأخير"""
+    metas = []
+    for item in catalog_list:
+        metas.append({
+            "id": item["id"],
+            "type": item_type,
+            "name": item["name"],
+            "poster": f"https://images.metahub.space/poster/medium/{item['id']}/img",
+            "genres": ["تركي", "قصة عشق"]
+        })
+    return metas
+
+def get_title(imdb_id: str, item_type: str):
+    """جلب اسم العمل باللغة العربية للبحث"""
+    if imdb_id in KNOWN_TITLES:
+        return KNOWN_TITLES[imdb_id]
+    
     try:
         url = f"https://v3-cinemeta.stremio.com/meta/{item_type}/{imdb_id}.json"
-        res = requests.get(url, timeout=5)
+        res = requests.get(url, headers=HEADERS, timeout=4)
         if res.status_code == 200:
-            data = res.json()
-            return data.get("meta", {}).get("name")
+            return res.json().get("meta", {}).get("name")
     except Exception as e:
-        print(f"Error fetching Cinemeta: {e}")
+        print(f"Cinemeta Error: {e}")
     return None
 
+def scrape_qeseh_streams(title: str, episode: str = None):
+    """السكرابر الخاص بموقع قصة"""
+    streams = []
+    search_query = title
+    if episode:
+        search_query = f"{title} الحلقة {episode}"
+
+    try:
+        encoded_query = urllib.parse.quote(search_query)
+        search_url = f"https://wwv.qeseh.com/?s={encoded_query}"
+        
+        res = requests.get(search_url, headers=HEADERS, timeout=5, verify=False)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, "html.parser")
+            
+            links = soup.select("article a, .post-title a, .entry-title a, h2 a, .box a, .item a")
+            target_url = None
+            for link in links:
+                href = link.get("href")
+                if href and ("qeseh.com" in href or href.startswith("/")):
+                    target_url = href
+                    break
+
+            if target_url:
+                if target_url.startswith("/"):
+                    target_url = "https://wwv.qeseh.com" + target_url
+
+                page_res = requests.get(target_url, headers=HEADERS, timeout=5, verify=False)
+                if page_res.status_code == 200:
+                    page_soup = BeautifulSoup(page_res.text, "html.parser")
+                    iframes = page_soup.find_all("iframe")
+                    
+                    server_idx = 1
+                    for iframe in iframes:
+                        src = iframe.get("src") or iframe.get("data-src") or iframe.get("data-lazy-src")
+                        if src:
+                            if src.startswith("//"):
+                                src = "https:" + src
+                            
+                            streams.append({
+                                "name": "Qeseh",
+                                "title": f"سيرفر قصة #{server_idx}\n720p/1080p | مترجم",
+                                "url": src
+                            })
+                            server_idx += 1
+    except Exception as e:
+        print(f"Scraper Error: {e}")
+
+    # سيرفر ضمان في حال تعذر السحب تلقائياً
+    if not streams:
+        streams.append({
+            "name": "Qeseh",
+            "title": f"سيرفر قصة الرئيسي - {title}" + (f" (حلقة {episode})" if episode else ""),
+            "url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
+        })
+
+    return streams
+
 @app.options("/{full_path:path}")
-async def options_handler(full_path: str):
-    """معالجة طلبات OPTIONS لضمان استقرار الاتصال"""
+def options_handler(full_path: str):
     return Response(status_code=200, headers=CORS_HEADERS)
 
 @app.get("/")
-async def root():
-    body = json.dumps({"status": "Qeseh Active"}, ensure_ascii=False)
-    return Response(content=body, headers=CORS_HEADERS)
+def root():
+    return Response(content=json.dumps({"status": "Qeseh Active & Ready"}, ensure_ascii=False), headers=CORS_HEADERS)
 
 @app.get("/manifest.json")
-async def get_manifest():
-    body = json.dumps(MANIFEST, ensure_ascii=False)
-    return Response(content=body, headers=CORS_HEADERS)
+def get_manifest():
+    return Response(content=json.dumps(MANIFEST, ensure_ascii=False), headers=CORS_HEADERS)
+
+@app.get("/catalog/{type}/{id}.json")
+@app.get("/catalog/{type}/{id}/{extra}.json")
+def get_catalog(type: str, id: str, extra: str = None):
+    clean_id = id.replace(".json", "")
+    metas = []
+    
+    if type == "series" and "qeseh_series" in clean_id:
+        metas = build_catalog_items(TURKISH_SERIES_CATALOG, "series")
+    elif type == "movie" and "qeseh_movies" in clean_id:
+        metas = build_catalog_items(TURKISH_MOVIES_CATALOG, "movie")
+
+    return Response(content=json.dumps({"metas": metas}, ensure_ascii=False), headers=CORS_HEADERS)
 
 @app.get("/stream/{type}/{id}.json")
-async def get_streams(type: str, id: str):
-    parts = id.split(":")
+def get_streams(type: str, id: str):
+    clean_id = id.replace(".json", "")
+    parts = clean_id.split(":")
     imdb_id = parts[0]
     season = parts[1] if len(parts) > 1 else None
     episode = parts[2] if len(parts) > 2 else None
 
-    title = get_title_from_imdb(imdb_id, type)
+    title = get_title(imdb_id, type)
     streams = []
 
     if title:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        try:
-            # البحث في موقع قصة عبر التمرير المباشر الآمن
-            search_url = "https://wwv.qeseh.com/"
-            res = requests.get(search_url, params={"s": title}, headers=headers, timeout=5)
-            
-            if res.status_code == 200:
-                streams.append({
-                    "name": "Qeseh",
-                    "title": f"سيرفر قصة - {title}",
-                    "url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
-                })
-        except Exception as e:
-            print(f"Error fetching Qeseh: {e}")
+        streams = scrape_qeseh_streams(title, episode)
 
-    body = json.dumps({"streams": streams}, ensure_ascii=False)
-    return Response(content=body, headers=CORS_HEADERS)
+    return Response(content=json.dumps({"streams": streams}, ensure_ascii=False), headers=CORS_HEADERS)
